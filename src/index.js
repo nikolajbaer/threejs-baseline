@@ -3,6 +3,13 @@ import * as CANNON from "cannon";
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import CHARACTER_FBX from "./assets/kenney/characterLargeMale.fbx";
+import RUN_FBX from "./assets/kenney/anim/run.fbx";
+import WALK_FBX from "./assets/kenney/anim/walk.fbx";
+import JUMP_FBX from "./assets/kenney/anim/jump.fbx";
+import IDLE_FBX from "./assets/kenney/anim/idle.fbx";
+
 function init(){
     var scene = new THREE.Scene();
     var camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
@@ -21,6 +28,8 @@ function init(){
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.setSize( window.innerWidth, window.innerHeight );
     document.body.appendChild( renderer.domElement );
+
+    var clock = new THREE.Clock();
 
     var effect = new OutlineEffect( renderer );
 
@@ -42,7 +51,40 @@ function init(){
         world.addBody( body);
         body.mesh = cube;
     }
-    setInterval(function(){ spawnCube(Math.random(),15,Math.random()) },500);
+    //spawnCube(0,5,0)
+    setInterval(function(){ spawnCube(Math.random(),15,Math.random()) },1000);
+
+    // Load Model
+    var loader = new FBXLoader();
+    var mixer = null;
+    loader.load( CHARACTER_FBX, function ( character ) {
+        character.traverse( function ( child ) {
+            if ( child.isMesh ) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+        } );
+        character.scale.set(0.01,0.01,0.01)
+        var body = new CANNON.Body({
+            mass: 5,
+            position: new CANNON.Vec3(0,2,0),
+            shape: new CANNON.Box(new CANNON.Vec3(0.5,3,0.5)),
+            type: CANNON.Body.KINEMATIC
+        })
+        body.mesh = character
+        world.addBody( body);
+        scene.add( character );
+
+        // Then load run animation
+        loader.load(WALK_FBX, function ( anim ) {
+            mixer = new THREE.AnimationMixer( character );
+            console.log(anim)
+            character.animations = anim.animations;
+            var action = mixer.clipAction( character.animations[0] );
+            action.play()
+        } );
+    } );
+
 
     // Create a plane
     var groundBody = new CANNON.Body({
@@ -82,6 +124,10 @@ function init(){
 
     function animate() {
         requestAnimationFrame( animate );            
+        if(mixer != null){
+            var delta = clock.getDelta();
+            mixer.update(delta);
+        }
         updatePhysics();
     	effect.render( scene, camera );
     }
