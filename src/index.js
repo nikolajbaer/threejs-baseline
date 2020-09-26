@@ -5,7 +5,7 @@ import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import CHARACTER_FBX from "./assets/kenney/characterLargeMale.fbx";
-import RUN_FBX from "./assets/kenney/anim/run.fbx";
+import RUN_FBX from "./assets/kenney/anim/walk.fbx";
 import WALK_FBX from "./assets/kenney/anim/walk.fbx";
 import JUMP_FBX from "./assets/kenney/anim/jump.fbx";
 import IDLE_FBX from "./assets/kenney/anim/idle.fbx";
@@ -13,6 +13,8 @@ import IDLE_FBX from "./assets/kenney/anim/idle.fbx";
 function init(){
     var scene = new THREE.Scene();
     var camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
+
+    const SPEED = 175;
 
     // Scene Lighting
     scene.fog = new THREE.Fog( 0x000000, 0, 500 );
@@ -52,12 +54,43 @@ function init(){
         body.mesh = cube;
     }
     //spawnCube(0,5,0)
-    setInterval(function(){ spawnCube(Math.random(),15,Math.random()) },1000);
+    setInterval(function(){ spawnCube(Math.random(),15,Math.random()) },2000);
 
     // Load Model
     var loader = new FBXLoader();
     var mixer = null;
-    loader.load( CHARACTER_FBX, function ( character ) {
+    var character = null;
+    var playerBod = null
+    var player_actions = {
+        unpauseAll: function(){
+            for(var k in this.actions){
+                this.actions[k].paused = false;
+            }
+        },
+        actions: {},
+        active: null,
+        played: [],
+        play: function(action_name,blend_time){
+            if(this.actions[action_name] == this.active){ return; }
+            console.log("playing ",action_name,this)
+            this.unpauseAll();
+            if(this.active == null){
+                this.actions[action_name].play();
+            }else{
+                if( this.played.includes(action_name) ){
+                    this.actions[action_name].reset()
+                }else{ 
+                    this.actions[action_name].play()
+                    this.played.push(action_name)
+                }
+                this.actions[action_name].crossFadeFrom(this.active,blend_time).play()
+            }
+            this.active = this.actions[action_name]
+        }
+    }
+    var playerMaterial = new THREE.MeshLambertMaterial( { color: 0xffeeff } );
+    loader.load( CHARACTER_FBX, function ( fbx ) {
+        character = fbx;
         character.traverse( function ( child ) {
             if ( child.isMesh ) {
                 child.castShadow = true;
@@ -65,23 +98,32 @@ function init(){
             }
         } );
         character.scale.set(0.01,0.01,0.01)
-        var body = new CANNON.Body({
+        playerBod = new CANNON.Body({
             mass: 5,
             position: new CANNON.Vec3(0,2,0),
             shape: new CANNON.Box(new CANNON.Vec3(0.5,3,0.5)),
             type: CANNON.Body.KINEMATIC
         })
-        body.mesh = character
-        world.addBody( body);
+        playerBod.mesh = character
+        console.log(character)
+        // TODO custom set color
+        //character.children[1].material = new THREE.MeshPhongMaterial( {color: 0xffeeff });
+        world.addBody( playerBod );
         scene.add( character );
+            
+        mixer = new THREE.AnimationMixer( character );
 
-        // Then load run animation
+        // Then load walk animation
         loader.load(WALK_FBX, function ( anim ) {
-            mixer = new THREE.AnimationMixer( character );
+            character.animations.push(anim.animations[0]);
             console.log(anim)
-            character.animations = anim.animations;
-            var action = mixer.clipAction( character.animations[0] );
-            action.play()
+            player_actions.actions['walk'] = mixer.clipAction( anim.animations[0] );
+        } );
+        loader.load(IDLE_FBX, function ( anim ) {
+            character.animations.push(anim.animations[0]);
+            console.log(anim)
+            player_actions.actions['idle'] = mixer.clipAction( anim.animations[0]);
+            player_actions.actions['idle'].play()
         } );
     } );
 
@@ -122,17 +164,114 @@ function init(){
         })                    
     }
 
+
+    // kevin's player ctrls
+    var raycaster = new THREE.Raycaster();
+    var mouse = new THREE.Vector2();
+
+    function onMouseMove( event ) {
+	    mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+	    mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+    }
+    window.addEventListener( 'mousemove', onMouseMove, false );
+
+    var playerCtl = {fwd: false, back: false, left: false, right: false};
+    function updatePlayer() {
+        if(character == null){ return; }
+
+        raycaster.setFromCamera( mouse, camera );
+        var intersects = raycaster.intersectObjects( [groundMesh] );
+
+        var tooClose = false;
+        if(intersects.length > 0 ){
+            const p = intersects[0].point;
+
+            if( character.position.distanceTo(p) < 1){
+                tooClose = true;
+            } 
+            character.lookAt(new THREE.Vector3(p.x,playerBod.position.y,p.z))
+            playerBod.quaternion.copy(character.quaternion)
+        }
+
+        var dir = new THREE.Vector3(0,0,0);
+
+        if( !tooClose ){
+            if (playerCtl.fwd) {
+                dir.z = 1;
+            }
+            if (playerCtl.back) {
+                dir.z = -1;
+            }
+        }
+        /*
+        if (playerCtl.left) {
+            dir.x = 1;
+        }
+        if (playerCtl.right) {
+            dir.x = -1;
+        }*/
+
+        dir.applyQuaternion( character.quaternion )
+        // TODO better version: https://threejs.org/examples/webgl_animation_skinning_blending
+        if(dir.length() > 0){
+            dir = dir.multiplyScalar( SPEED * clock.getDelta() )
+            // No y for now
+            playerBod.position.x += dir.x;
+            playerBod.position.z += dir.z;
+
+            player_actions.play('walk',0.25)
+        }else{
+            player_actions.play('idle',0.25)
+        }
+    }
+    
+    window.addEventListener("keydown", function(e) {
+        
+        switch(e.key) {
+            case 'w':
+                playerCtl.fwd = true;
+            break;
+            case 's':
+                playerCtl.back = true;
+            break;
+            case 'a':
+                playerCtl.left = true;
+            break;
+            case 'd':
+                playerCtl.right = true;
+            break;
+        }
+    });
+    window.addEventListener("keyup", function(e) {
+        
+        switch(e.key) {
+            case 'w':
+                playerCtl.fwd = false;
+            break;
+            case 's':
+                playerCtl.back = false;
+            break;
+            case 'a':
+                playerCtl.left = false;
+            break;
+            case 'd':
+                playerCtl.right = false;
+            break;
+        }
+    });
+
+
     function animate() {
         requestAnimationFrame( animate );            
         if(mixer != null){
             var delta = clock.getDelta();
             mixer.update(delta);
         }
+        updatePlayer();
         updatePhysics();
     	effect.render( scene, camera );
     }
     animate();
-
 }
 
 init();
