@@ -9,12 +9,24 @@ import RUN_FBX from "./assets/kenney/anim/walk.fbx";
 import WALK_FBX from "./assets/kenney/anim/walk.fbx";
 import JUMP_FBX from "./assets/kenney/anim/jump.fbx";
 import IDLE_FBX from "./assets/kenney/anim/idle.fbx";
+import DEATH_FBX from "./assets/kenney/anim/death.fbx";
+import KICK_FBX from "./assets/kenney/anim/kick.fbx";
+
+const ANIMS = [
+    {fbx:RUN_FBX, name:"run", idx:1,play:false},
+    {fbx:WALK_FBX, name:"walk", idx:0,play:false},
+    {fbx:JUMP_FBX, name:"jump", idx:0,play:false}, 
+    {fbx:IDLE_FBX, name:"idle", idx:0,play:false},
+    {fbx:DEATH_FBX, name:"death", idx:0,play:false},
+    {fbx:KICK_FBX, name:"kick", idx:0,play:false},
+]
 
 function init(){
     var scene = new THREE.Scene();
     var camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
 
     const SPEED = 175;
+    const JUMP_VELOCITY = 10;
 
     // Scene Lighting
     scene.fog = new THREE.Fog( 0x000000, 0, 500 );
@@ -36,7 +48,8 @@ function init(){
     var effect = new OutlineEffect( renderer );
 
     var world = new CANNON.World();
-    world.gravity.set(0,-9.82,0);
+    const GRAVITY = -9.82;
+    world.gravity.set(0,GRAVITY,0);
 
     // Create Cube
     function spawnCube(x,y,z){
@@ -61,6 +74,7 @@ function init(){
     var mixer = null;
     var character = null;
     var playerBod = null
+    var canJump = false;
     var player_actions = {
         unpauseAll: function(){
             for(var k in this.actions){
@@ -70,6 +84,9 @@ function init(){
         actions: {},
         active: null,
         played: [],
+        isPlaying: function(anim_name){
+            return this.actions[anim_name] != undefined && this.active == this.actions[anim_name];
+        },
         play: function(action_name,blend_time){
             if(this.actions[action_name] == this.active){ return; }
             console.log("playing ",action_name,this)
@@ -105,6 +122,24 @@ function init(){
             type: CANNON.Body.KINEMATIC
         })
         playerBod.mesh = character
+
+        // From https://schteppe.github.io/cannon.js/examples/js/PointerLockControls.js
+        var contactNormal = new CANNON.Vec3();
+        var upAxis = new CANNON.Vec3(0,1,0)
+        playerBod.addEventListener("collide",function(e){
+
+           if(e.contact.bi.id == playerBod.id){
+               e.contact.ni.negate(contactNormal)
+           }else{
+               contactNormal.copy(e.contact.ni)
+           }
+           if(contactNormal.dot(upAxis) > 0.5){
+               canJump = true
+               playerBod.velocity.y = 0
+           }
+
+        });
+
         console.log(character)
         // TODO custom set color
         //character.children[1].material = new THREE.MeshPhongMaterial( {color: 0xffeeff });
@@ -114,17 +149,15 @@ function init(){
         mixer = new THREE.AnimationMixer( character );
 
         // Then load walk animation
-        loader.load(WALK_FBX, function ( anim ) {
-            character.animations.push(anim.animations[0]);
-            console.log(anim)
-            player_actions.actions['walk'] = mixer.clipAction( anim.animations[0] );
-        } );
-        loader.load(IDLE_FBX, function ( anim ) {
-            character.animations.push(anim.animations[0]);
-            console.log(anim)
-            player_actions.actions['idle'] = mixer.clipAction( anim.animations[0]);
-            player_actions.actions['idle'].play()
-        } );
+        ANIMS.forEach( a => {
+            loader.load(a.fbx, function ( anim ) {
+                character.animations.push(anim.animations[a.idx]);
+                player_actions.actions[a.name] = mixer.clipAction( anim.animations[a.idx] );
+                if(a.play){
+                    player_actions.actions[a.name].play()
+                }
+            } );
+        })
     } );
 
 
@@ -173,7 +206,7 @@ function init(){
 	    mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
 	    mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
     }
-    window.addEventListener( 'mousemove', onMouseMove, false );
+    window.addEventListener( 'mousemove', onMouseMove );
 
     var playerCtl = {fwd: false, back: false, left: false, right: false};
     function updatePlayer() {
@@ -203,6 +236,12 @@ function init(){
                 dir.z = -1;
             }
         }
+
+        if(playerCtl.jump && canJump){
+            playerBod.velocity.y = JUMP_VELOCITY
+            canJump = false
+        }
+
         /*
         if (playerCtl.left) {
             dir.x = 1;
@@ -220,11 +259,18 @@ function init(){
             playerBod.position.z += dir.z;
 
             player_actions.play('walk',0.25)
-        }else{
+        }else if( !player_actions.isPlaying("death") ){
             player_actions.play('idle',0.25)
         }
+
+        if(playerBod.velocity.y != 0){
+            playerBod.position.y += playerBod.velocity.y * clock.getDelta()
+            playerBod.velocity.y += GRAVITY
+        }else{
+            playerBod.velocity.y = 0
+        }
     }
-    
+
     window.addEventListener("keydown", function(e) {
         
         switch(e.key) {
@@ -239,6 +285,9 @@ function init(){
             break;
             case 'd':
                 playerCtl.right = true;
+            break;
+            case ' ':
+                playerCtl.jump = true;
             break;
         }
     });
@@ -256,6 +305,9 @@ function init(){
             break;
             case 'd':
                 playerCtl.right = false;
+            break;
+            case ' ':
+                playerCtl.jump = false;
             break;
         }
     });
