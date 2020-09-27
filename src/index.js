@@ -217,6 +217,13 @@ function init(){
     }
     window.addEventListener( 'mousemove', onMouseMove );
 
+    function onMouseDown( event ){ playerCtl.jump = true; }
+    function onMouseUp( event ){ playerCtl.jump = false}
+    window.addEventListener( 'mousedown', onMouseDown );
+    window.addEventListener( 'mouseup', onMouseUp );
+
+    document.getElementById("dropCube").addEventListener('click', e=> { spawnCube(0,10,0); })
+
     var playerCtl = {fwd: false, back: false, left: false, right: false};
     function updatePlayer(delta) {
         if(character == null){ return; }
@@ -238,12 +245,7 @@ function init(){
         var dir = new THREE.Vector3(0,0,0);
 
         if( !tooClose ){
-            if (playerCtl.fwd) {
-                dir.z = 1;
-            }
-            if (playerCtl.back) {
-                dir.z = -1;
-            }
+            dir.z = 1;
         }
 
         if(playerCtl.jump && canJump){
