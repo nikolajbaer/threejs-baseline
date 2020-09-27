@@ -5,7 +5,7 @@ import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import CHARACTER_FBX from "./assets/kenney/characterLargeMale.fbx";
-import RUN_FBX from "./assets/kenney/anim/walk.fbx";
+import RUN_FBX from "./assets/kenney/anim/run.fbx";
 import WALK_FBX from "./assets/kenney/anim/walk.fbx";
 import JUMP_FBX from "./assets/kenney/anim/jump.fbx";
 import IDLE_FBX from "./assets/kenney/anim/idle.fbx";
@@ -13,20 +13,23 @@ import DEATH_FBX from "./assets/kenney/anim/death.fbx";
 import KICK_FBX from "./assets/kenney/anim/kick.fbx";
 
 const ANIMS = [
-    {fbx:RUN_FBX, name:"run", idx:1,play:false},
-    {fbx:WALK_FBX, name:"walk", idx:0,play:false},
-    {fbx:JUMP_FBX, name:"jump", idx:0,play:false}, 
-    {fbx:IDLE_FBX, name:"idle", idx:0,play:false},
-    {fbx:DEATH_FBX, name:"death", idx:0,play:false},
-    {fbx:KICK_FBX, name:"kick", idx:0,play:false},
+    {fbx:RUN_FBX, name:"run", idx:1,play:false,loop:true},
+    {fbx:WALK_FBX, name:"walk", idx:0,play:false,loop:true},
+    {fbx:JUMP_FBX, name:"jump", idx:0,play:false,loop:false}, 
+    {fbx:IDLE_FBX, name:"idle", idx:0,play:false,loop:true},
+    {fbx:DEATH_FBX, name:"death", idx:0,play:false,loop:false},
+    {fbx:KICK_FBX, name:"kick", idx:0,play:false,loop:false},
 ]
 
 function init(){
     var scene = new THREE.Scene();
     var camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
 
-    const SPEED = 175;
-    const JUMP_VELOCITY = 10;
+    const WALK_SPEED = 4;
+    const RUN_SPEED = WALK_SPEED * 3;
+    const JUMP_VELOCITY = 8;
+    const CUBE_WAIT = 0.25;
+    var cubeTimer = 0;
 
     // Scene Lighting
     scene.fog = new THREE.Fog( 0x000000, 0, 500 );
@@ -67,7 +70,7 @@ function init(){
         body.mesh = cube;
     }
     //spawnCube(0,5,0)
-    setInterval(function(){ spawnCube(Math.random(),15,Math.random()) },2000);
+    //setInterval(function(){ spawnCube(Math.random(),15,Math.random()) },2000);
 
     // Load Model
     var loader = new FBXLoader();
@@ -75,6 +78,7 @@ function init(){
     var character = null;
     var playerBod = null
     var canJump = false;
+    var isJumping = false;
     var player_actions = {
         unpauseAll: function(){
             for(var k in this.actions){
@@ -117,25 +121,27 @@ function init(){
         character.scale.set(0.01,0.01,0.01)
         playerBod = new CANNON.Body({
             mass: 5,
-            position: new CANNON.Vec3(0,2,0),
+            position: new CANNON.Vec3(0,5,0),
             shape: new CANNON.Box(new CANNON.Vec3(0.5,3,0.5)),
             type: CANNON.Body.KINEMATIC
         })
+        playerBod.floorLevel = 2;
         playerBod.mesh = character
 
         // From https://schteppe.github.io/cannon.js/examples/js/PointerLockControls.js
         var contactNormal = new CANNON.Vec3();
         var upAxis = new CANNON.Vec3(0,1,0)
         playerBod.addEventListener("collide",function(e){
-
+            console.log(e)
            if(e.contact.bi.id == playerBod.id){
                e.contact.ni.negate(contactNormal)
            }else{
                contactNormal.copy(e.contact.ni)
            }
            if(contactNormal.dot(upAxis) > 0.5){
+               console.log("Vertical collision")
                canJump = true
-               playerBod.velocity.y = 0
+               playerBox.velocity.y = 0;
            }
 
         });
@@ -153,6 +159,9 @@ function init(){
             loader.load(a.fbx, function ( anim ) {
                 character.animations.push(anim.animations[a.idx]);
                 player_actions.actions[a.name] = mixer.clipAction( anim.animations[a.idx] );
+                if(!a.loop){
+                    player_actions.actions[a.name].setLoop(THREE.LoopOnce);
+                }
                 if(a.play){
                     player_actions.actions[a.name].play()
                 }
@@ -185,10 +194,10 @@ function init(){
 
     var controls = new OrbitControls( camera, renderer.domElement );
 	controls.minDistance = 10;
-	controls.maxDistance = 100;
+    controls.maxDistance = 100;
 
-    function updatePhysics(){
-        world.step(timestep);
+    function updatePhysics(delta){
+        world.step(delta);
         world.bodies.forEach( b => {
             if(b.mesh != undefined){
                 b.mesh.position.copy(b.position)
@@ -197,19 +206,19 @@ function init(){
         })                    
     }
 
-
     // kevin's player ctrls
     var raycaster = new THREE.Raycaster();
     var mouse = new THREE.Vector2();
 
     function onMouseMove( event ) {
 	    mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
-	    mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+        mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+        return event;
     }
     window.addEventListener( 'mousemove', onMouseMove );
 
     var playerCtl = {fwd: false, back: false, left: false, right: false};
-    function updatePlayer() {
+    function updatePlayer(delta) {
         if(character == null){ return; }
 
         raycaster.setFromCamera( mouse, camera );
@@ -238,34 +247,45 @@ function init(){
         }
 
         if(playerCtl.jump && canJump){
+            player_actions.play("jump",0.1)
             playerBod.velocity.y = JUMP_VELOCITY
             canJump = false
+            isJumping = true
+        }else{
+            playerBod.velocity.y += GRAVITY * delta
         }
-
-        /*
-        if (playerCtl.left) {
-            dir.x = 1;
-        }
-        if (playerCtl.right) {
-            dir.x = -1;
-        }*/
 
         dir.applyQuaternion( character.quaternion )
         // TODO better version: https://threejs.org/examples/webgl_animation_skinning_blending
         if(dir.length() > 0){
-            dir = dir.multiplyScalar( SPEED * clock.getDelta() )
+           if(playerCtl.run){
+                dir = dir.multiplyScalar( RUN_SPEED * delta  )
+                if(!isJumping){ player_actions.play('run',0.25) }
+            }else{
+                dir = dir.multiplyScalar( WALK_SPEED * delta )
+                if(!isJumping){ player_actions.play('walk',0.25) }
+            }
             // No y for now
             playerBod.position.x += dir.x;
             playerBod.position.z += dir.z;
 
-            player_actions.play('walk',0.25)
         }else if( !player_actions.isPlaying("death") ){
             player_actions.play('idle',0.25)
         }
 
         if(playerBod.velocity.y != 0){
-            playerBod.position.y += playerBod.velocity.y * clock.getDelta()
-            playerBod.velocity.y += GRAVITY
+            // Kinematic bodies don't have collision events with
+            // static bodies, so instead we track floorLevel manually
+            // to stop a fall
+            if(playerBod.position.y <= playerBod.floorLevel && playerBod.velocity.y < 0){
+                playerBod.position.y = playerBod.floorLevel 
+                playerBod.velocity.y = 0
+                canJump = true
+                isJumping = false
+            }else{
+                playerBod.position.y += playerBod.velocity.y * delta
+                playerBod.velocity.y += GRAVITY * delta
+            }
         }else{
             playerBod.velocity.y = 0
         }
@@ -289,6 +309,17 @@ function init(){
             case ' ':
                 playerCtl.jump = true;
             break;
+            case 'Shift':
+                playerCtl.run = true;
+            break
+            case 'q':
+                if( cubeTimer <= 0){
+                    spawnCube(0,15,0);
+                    cubeTimer = CUBE_WAIT;
+                }else{
+                    console.log(cubeTimer);
+                }
+            break;
         }
     });
     window.addEventListener("keyup", function(e) {
@@ -309,18 +340,24 @@ function init(){
             case ' ':
                 playerCtl.jump = false;
             break;
+            case 'Shift':
+                playerCtl.run = false;
+            break;
         }
     });
 
 
     function animate() {
         requestAnimationFrame( animate );            
+        const delta = clock.getDelta();
         if(mixer != null){
-            var delta = clock.getDelta();
             mixer.update(delta);
         }
-        updatePlayer();
-        updatePhysics();
+        updatePlayer(delta);
+        updatePhysics(delta);
+        if(cubeTimer > 0){
+            cubeTimer -= delta;
+        }
     	effect.render( scene, camera );
     }
     animate();
