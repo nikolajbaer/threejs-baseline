@@ -29,6 +29,7 @@ function init(){
     const RUN_SPEED = WALK_SPEED * 3;
     const JUMP_VELOCITY = 8;
     const CUBE_WAIT = 0.25;
+    const WORLD_RADIUS = 100
     var cubeTimer = 0;
 
     // Scene Lighting
@@ -93,7 +94,6 @@ function init(){
         },
         play: function(action_name,blend_time){
             if(this.actions[action_name] == this.active){ return; }
-            console.log("playing ",action_name,this)
             this.unpauseAll();
             if(this.active == null){
                 this.actions[action_name].play();
@@ -123,7 +123,8 @@ function init(){
             mass: 5,
             position: new CANNON.Vec3(0,5,0),
             shape: new CANNON.Box(new CANNON.Vec3(0.5,3,0.5)),
-            type: CANNON.Body.KINEMATIC
+            type: CANNON.Body.KINEMATIC,
+            name: 'player'
         })
         playerBod.floorLevel = 2;
         playerBod.mesh = character
@@ -196,9 +197,20 @@ function init(){
 	controls.minDistance = 10;
     controls.maxDistance = 100;
 
+    function removeBody(body){
+        if(body.mesh != undefined){
+            scene.remove(body.mesh)
+        }
+        world.removeBody(body)
+    }
+
     function updatePhysics(delta){
         world.step(delta);
         world.bodies.forEach( b => {
+            if(b.name != 'player' && b.position.distanceTo(new CANNON.Vec3(0,0,0)) > WORLD_RADIUS){
+                removeBody(b)
+                return 
+            }
             if(b.mesh != undefined){
                 b.mesh.position.copy(b.position)
                 b.mesh.quaternion.copy(b.quaternion)
@@ -210,19 +222,45 @@ function init(){
     var raycaster = new THREE.Raycaster();
     var mouse = new THREE.Vector2();
 
+    // Click to walk/run to point
+    function setMouseTarget( event ){
+	    mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+        mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+    }
+    function onMouseClick( event ){
+        playerCtl.run = false
+        setMouseTarget(event);
+    }
+    window.addEventListener( 'click', onMouseClick )
+    function onMouseDblClick( event ){
+        playerCtl.run = true
+        setMouseTarget(event)
+    }
+    window.addEventListener( 'dblclick', onMouseDblClick )
+
+    /*
     function onMouseMove( event ) {
 	    mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
         mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
         return event;
     }
     window.addEventListener( 'mousemove', onMouseMove );
-
+    */
+    /*
     function onMouseDown( event ){ playerCtl.jump = true; }
     function onMouseUp( event ){ playerCtl.jump = false}
     window.addEventListener( 'mousedown', onMouseDown );
     window.addEventListener( 'mouseup', onMouseUp );
+    */
 
-    document.getElementById("dropCube").addEventListener('click', e=> { spawnCube(0,10,0); })
+    document.getElementById("dropCubeButton").addEventListener('click', e=> { 
+        spawnCube(0,10,0); 
+        e.stopPropagation();
+    })
+    document.getElementById("jumpButton").addEventListener('click', e=> { 
+        playerCtl.jump = true;
+        e.stopPropagation()
+    })
 
     var playerCtl = {fwd: false, back: false, left: false, right: false};
     function updatePlayer(delta) {
@@ -246,6 +284,11 @@ function init(){
 
         if( !tooClose ){
             dir.z = 1;
+        }else{
+            // disable run if we have arrived
+            if(playerCtl.run){
+                playerCtl.run = false;
+            }
         }
 
         if(playerCtl.jump && canJump){
@@ -253,6 +296,7 @@ function init(){
             playerBod.velocity.y = JUMP_VELOCITY
             canJump = false
             isJumping = true
+            playerCtl.jump = false
         }else{
             playerBod.velocity.y += GRAVITY * delta
         }

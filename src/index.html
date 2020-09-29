@@ -16,14 +16,26 @@
 		.hud {
 			position: absolute;
 			bottom: 4px;
-			left: 4px;
+			width: 100%;
 			font-size: 8pt;
+			text-align: center;
+			margin: auto;
+		}
+		.hud button {
+			padding: 10px;
+			margin-right: 20px;
+			font-size: 14pt;
+			background-color: #333;
+			color: #fff;
 		}
 	</style>
 </head>
 <body>
 	<div id="overlay">
-		<div class="hud">Q or <button id="dropCube">DROP</button> drops cube, Shift to run, Click to jump</div>
+		<div class="hud">
+			<button id="dropCubeButton">+CUBE</button>
+			<button id="jumpButton">JUMP</button>
+		</div>
 	</div>
 </body>
 </html>
