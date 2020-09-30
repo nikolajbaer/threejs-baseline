@@ -18,7 +18,7 @@ const ANIMS = [
     {fbx:JUMP_FBX, name:"jump", idx:0,play:false,loop:false}, 
     {fbx:IDLE_FBX, name:"idle", idx:0,play:false,loop:true},
     {fbx:DEATH_FBX, name:"death", idx:0,play:false,loop:false},
-    {fbx:KICK_FBX, name:"kick", idx:0,play:false,loop:false},
+    {fbx:KICK_FBX, name:"kick", idx:1,play:false,loop:false},
 ]
 
 function init(){
@@ -221,6 +221,8 @@ function init(){
     // kevin's player ctrls
     var raycaster = new THREE.Raycaster();
     var mouse = new THREE.Vector2();
+    var castRay = false;
+    var playerTarget = null;
 
     // Click to walk/run to point
     function setMouseTarget( event ){
@@ -230,11 +232,13 @@ function init(){
     function onMouseClick( event ){
         playerCtl.run = false
         setMouseTarget(event);
+        castRay = true
     }
     window.addEventListener( 'click', onMouseClick )
     function onMouseDblClick( event ){
         playerCtl.run = true
         setMouseTarget(event)
+        castRay = true
     }
     window.addEventListener( 'dblclick', onMouseDblClick )
 
@@ -266,29 +270,41 @@ function init(){
     function updatePlayer(delta) {
         if(character == null){ return; }
 
-        raycaster.setFromCamera( mouse, camera );
-        var intersects = raycaster.intersectObjects( [groundMesh] );
+        if( castRay ){
+            raycaster.setFromCamera( mouse, camera );
+            var intersects = raycaster.intersectObjects( scene.children );
+            console.log(intersects)
+            if(intersects.length > 0 && intersects[0].object  == groundMesh ){
+                playerTarget = intersects[0].point;
+            }else if(intersects.length > 0){
+                console.log("clicked on ",intersects[0])
+                if( character.position.distanceTo( intersects[0].point) < 1.5){
+                    player_actions.play("kick",0.1)
+                    console.log("Kick!")
+                }else{
+                    playerTarget = intersects[0].point;
+                }
+            }
+            castRay = false
+        }
 
         var tooClose = false;
-        if(intersects.length > 0 ){
-            const p = intersects[0].point;
-
-            if( character.position.distanceTo(p) < 1){
+        if(playerTarget != null){
+            if( character.position.distanceTo(playerTarget) < 1){
                 tooClose = true;
             } 
-            character.lookAt(new THREE.Vector3(p.x,playerBod.position.y,p.z))
+            character.lookAt(new THREE.Vector3(playerTarget.x,playerBod.position.y,playerTarget.z))
             playerBod.quaternion.copy(character.quaternion)
         }
 
         var dir = new THREE.Vector3(0,0,0);
-
-        if( !tooClose ){
+        if( !tooClose && playerTarget != null){
             dir.z = 1;
         }else{
-            // disable run if we have arrived
             if(playerCtl.run){
                 playerCtl.run = false;
             }
+            playerTarget = null
         }
 
         if(playerCtl.jump && canJump){
